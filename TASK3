@@ -1,0 +1,57 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import numpy as np
+
+# Sample data: User-item rating matrix
+data = {
+    'User': ['User1', 'User1', 'User2', 'User2', 'User3', 'User3', 'User4', 'User4'],
+    'Movie': ['Movie1', 'Movie2', 'Movie1', 'Movie3', 'Movie2', 'Movie3', 'Movie3', 'Movie4'],
+    'Rating': [5, 4, 3, 5, 4, 2, 3, 5]
+}
+
+df = pd.DataFrame(data)
+
+# Create user-item matrix
+user_item_matrix = df.pivot_table(index='User', columns='Movie', values='Rating', fill_value=0)
+
+# Split the data into training and testing sets
+train_data, test_data = train_test_split(df, test_size=0.2, random_state=42)
+
+# Create user-item matrix for training data
+train_user_item_matrix = train_data.pivot_table(index='User', columns='Movie', values='Rating', fill_value=0)
+
+# Calculate cosine similarity between users
+user_similarity = cosine_similarity(train_user_item_matrix)
+
+# Predict ratings for the test set
+def predict_ratings(user_item_matrix, user_similarity):
+    pred_ratings = user_item_matrix.copy()
+    for i in range(user_item_matrix.shape[0]):
+        nonzero_ratings = user_item_matrix.iloc[i, :].nonzero()[0]
+        for j in range(user_item_matrix.shape[1]):
+            if user_item_matrix.iloc[i, j] == 0:
+                pred_ratings.iloc[i, j] = sum(
+                    user_item_matrix.iloc[:, j][nonzero_ratings] * user_similarity[i][nonzero_ratings]
+                ) / sum(np.abs(user_similarity[i][nonzero_ratings]) + 1e-8)
+    return pred_ratings
+
+predicted_ratings = predict_ratings(train_user_item_matrix, user_similarity)
+
+# Evaluate the model using Mean Squared Error
+test_user_item_matrix = test_data.pivot_table(index='User', columns='Movie', values='Rating', fill_value=0)
+mse = mean_squared_error(test_user_item_matrix, predicted_ratings.loc[test_user_item_matrix.index, test_user_item_matrix.columns])
+print(f"Mean Squared Error: {mse}")
+
+# Recommend movies for a given user
+def recommend_movies(user, user_item_matrix, predicted_ratings, n=5):
+    user_ratings = predicted_ratings.loc[user]
+    rated_movies = user_item_matrix.loc[user]
+    unrated_movies = user_ratings[rated_movies == 0].index
+    top_n_movies = unrated_movies[np.argsort(user_ratings[unrated_movies])[::-1][:n]]
+    return top_n_movies
+
+# Example: Recommend 3 movies for 'User1'
+recommended_movies = recommend_movies('User1', user_item_matrix, predicted_ratings, n=3)
+print(f"Recommended movies for User1: {recommended_movies.tolist()}")
